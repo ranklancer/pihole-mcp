@@ -1,0 +1,62 @@
+# Example Docker Compose for pihole-mcp
+#
+# Copy to docker-compose.yml, create a .env from .env.example,
+# and create secrets files (or use env vars directly).
+
+services:
+  pihole-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pihole-mcp
+    # --- If using Docker secrets for passwords: ---
+    entrypoint:
+      - sh
+      - -c
+      - |
+        export PIHOLE_PASSWORD=$$(cat /run/secrets/pihole_password)
+        # Uncomment for additional instances:
+        # export PIHOLE2_PASSWORD=$$(cat /run/secrets/pihole2_password)
+        exec node dist/index.js
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3000"
+      TZ: ${TZ:-UTC}
+      PIHOLE_INSTANCES: ${PIHOLE_INSTANCES:-pihole}
+      PIHOLE_BASE_URL: ${PIHOLE_BASE_URL}
+      # Uncomment for additional instances:
+      # PIHOLE2_BASE_URL: ${PIHOLE2_BASE_URL}
+      # PIHOLE2_INSECURE_TLS: "true"
+    secrets:
+      - pihole_password
+      # - pihole2_password
+    ports:
+      - "127.0.0.1:3031:3000"
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid
+    mem_limit: 256m
+    cpus: 0.3
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+secrets:
+  pihole_password:
+    file: ./secrets/pihole_password
+  # pihole2_password:
+  #   file: ./secrets/pihole2_password
