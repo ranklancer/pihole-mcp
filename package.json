@@ -1,15 +1,24 @@
 {
-  "name": "pihole-mcp",
+  "name": "@ranklancer/pihole-mcp",
   "version": "0.2.0",
-  "description": "MCP server for Pi-hole v6 API — supports multiple instances",
+  "description": "MCP server for Pi-hole v6 API — multi-instance DNS ad-blocker management for AI assistants",
+  "mcpName": "io.github.ranklancer/pihole-mcp",
   "private": false,
   "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
+  "bin": {
+    "pihole-mcp": "dist/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ranklancer/pihole-mcp.git"
+  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsc --watch",
+    "prepublishOnly": "npm run build",
     "test:integration": "node dist/test/integration.js"
   },
   "dependencies": {
@@ -26,9 +35,19 @@
   },
   "keywords": [
     "pihole",
+    "pi-hole",
     "mcp",
     "model-context-protocol",
+    "mcp-server",
     "dns",
-    "adblock"
+    "adblock",
+    "ad-blocking",
+    "homelab",
+    "self-hosted",
+    "docker",
+    "dns-filtering",
+    "network-security",
+    "claude",
+    "ai-tools"
   ]
 }
