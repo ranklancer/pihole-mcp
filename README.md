@@ -5,7 +5,7 @@
 [![Pi-hole v6](https://img.shields.io/badge/Pi--hole-v6-red.svg)](https://pi-hole.net)
 [![MCP](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-purple.svg)](https://modelcontextprotocol.io)
 
-An [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server that gives AI assistants like **Claude** full control over your [Pi-hole v6](https://pi-hole.net) DNS ad-blocker — query logs, allow/deny lists, group management, gravity reload, and stats. Designed from day one for **multi-instance deployments**: manage one or many Pi-hole instances from a single MCP endpoint.
+An [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server that gives AI assistants like **Claude** full control over your [Pi-hole v6](https://pi-hole.net) DNS ad-blocker - query logs, allow/deny lists, group management, gravity reload, and stats. Designed from day one for **multi-instance deployments**: manage one or many Pi-hole instances from a single MCP endpoint.
 
 ## Why?
 
@@ -15,13 +15,13 @@ Perfect for **homelabbers** running multiple Pi-holes (primary + secondary, or p
 
 ## Features
 
-- **Multi-instance support** — configure 1 to N Pi-hole instances via environment variables
-- **Full Pi-hole v6 API coverage** — query logs, allow/deny lists, group management, gravity reload, stats
-- **Smart regex detection** — automatically routes domains to exact or regex lists based on metacharacter analysis
-- **Regex landmine detector** — finds deny-exact entries that look like they should be regex (miscategorized rules)
-- **Docker-ready** — multi-stage Dockerfile with non-root user, health checks, and security hardening
-- **Streamable HTTP transport** — works with any MCP client that supports HTTP-based MCP
-- **Docker secrets support** — passwords via env vars or `/run/secrets/` files
+- **Multi-instance support** - configure 1 to N Pi-hole instances via environment variables
+- **Full Pi-hole v6 API coverage** - query logs, allow/deny lists, group management, gravity reload, stats
+- **Smart regex detection** - automatically routes domains to exact or regex lists based on metacharacter analysis
+- **Regex landmine detector** - finds deny-exact entries that look like they should be regex (miscategorized rules)
+- **Docker-ready** - multi-stage Dockerfile with non-root user, health checks, and security hardening
+- **Streamable HTTP transport** - works with any MCP client that supports HTTP-based MCP
+- **Docker secrets support** - passwords via env vars or `/run/secrets/` files
 
 ## Quick Start
 
