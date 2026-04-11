@@ -1,4 +1,4 @@
-import { request, Agent } from 'undici';
+import { request, Agent, Dispatcher } from 'undici';
 import { looksLikeRegex } from './types.js';
 import type { PiholeInstanceConfig, PiholeSession, QueryOpts, GroupOpts } from './types.js';
 
@@ -52,7 +52,7 @@ export class PiholeClient {
   }
 
   /** Generic authenticated API call. */
-  async call(method: string, path: string, payload?: unknown): Promise<any> {
+  async call(method: Dispatcher.HttpMethod, path: string, payload?: unknown): Promise<any> {
     const sess = await this.ensureSession();
     const url = `${this.cfg.baseUrl}${path}`;
     const headers: Record<string, string> = { 'X-FTL-SID': sess.sid };
