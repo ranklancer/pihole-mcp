@@ -60,7 +60,7 @@ All configuration is via environment variables. See [`.env.example`](.env.exampl
 
 ```env
 PIHOLE_INSTANCES=pihole
-PIHOLE_BASE_URL=http://192.168.1.100
+PIHOLE_BASE_URL=http://192.0.2.100
 PIHOLE_PASSWORD=your-password
 ```
 
@@ -68,9 +68,9 @@ PIHOLE_PASSWORD=your-password
 
 ```env
 PIHOLE_INSTANCES=primary,secondary
-PRIMARY_BASE_URL=http://192.168.1.100
+PRIMARY_BASE_URL=http://192.0.2.100
 PRIMARY_PASSWORD=password1
-SECONDARY_BASE_URL=https://192.168.1.101
+SECONDARY_BASE_URL=https://198.51.100.101
 SECONDARY_PASSWORD=password2
 SECONDARY_INSECURE_TLS=true
 ```

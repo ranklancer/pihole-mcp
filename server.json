@@ -26,7 +26,7 @@
         },
         {
           "name": "PIHOLE_BASE_URL",
-          "description": "Base URL of your first Pi-hole instance (e.g. 'http://192.168.1.100')",
+          "description": "Base URL of your first Pi-hole instance (e.g. 'http://192.0.2.100')",
           "isRequired": true,
           "format": "string",
           "isSecret": false
