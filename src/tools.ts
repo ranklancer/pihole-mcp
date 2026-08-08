@@ -116,4 +116,87 @@ export const toolDefs: ToolDef[] = [
       return { results: await Promise.all(targets.map(n => getClient(n).checkRegexTypes())) };
     },
   },
+  {
+    name: 'pihole_set_blocking',
+    description:
+      'Enable or disable Pi-hole DNS blocking, optionally for a limited time ' +
+      '(POST /api/dns/blocking). Set blocking=false to pause ad-blocking; supply ' +
+      'timer (seconds) to auto-revert afterwards, or omit for a permanent change.',
+    schema: z.object({
+      instance: Instance,
+      blocking: z.boolean().describe('true = enable blocking, false = disable (pause).'),
+      timer: z.number().int().positive().optional()
+        .describe('Optional seconds after which blocking auto-reverts. Omit for permanent.'),
+    }),
+    handler: async (args) => getClient(args.instance).setBlocking(args.blocking, args.timer),
+  },
+  {
+    name: 'pihole_domain_management',
+    description:
+      'Update or delete an existing allow/deny list domain ' +
+      '(PUT/DELETE /api/domains/{allow,deny}/{exact,regex}/{domain}). ' +
+      'Completes the CRUD alongside the add/list tools. update preserves any ' +
+      'fields you omit (read-modify-write).',
+    schema: z.object({
+      instance:  Instance,
+      action:    z.enum(['update', 'delete']),
+      list_type: z.enum(['allow', 'deny']),
+      kind:      z.enum(['exact', 'regex']),
+      domain:    z.string().min(1),
+      comment:   z.string().optional().describe('update only: new comment (omit to clear).'),
+      enabled:   z.boolean().optional().describe('update only: enable/disable the entry.'),
+      groups:    z.array(z.number().int()).optional()
+        .describe('update only: group IDs the entry belongs to. Defaults to [0] if omitted.'),
+    }),
+    handler: async (args) => {
+      const c = getClient(args.instance);
+      if (args.action === 'delete') {
+        return c.deleteDomain(args.list_type, args.kind, args.domain);
+      }
+      return c.updateDomain(args.list_type, args.kind, args.domain, {
+        comment: args.comment, groups: args.groups, enabled: args.enabled,
+      });
+    },
+  },
+  {
+    name: 'pihole_local_dns',
+    description:
+      'Manage local DNS A records (config.dns.hosts). action=list|add|delete; ' +
+      'add/delete require ip and domain.',
+    schema: z.object({
+      instance: Instance,
+      action:   z.enum(['list', 'add', 'delete']),
+      ip:       z.string().optional().describe('IP address to map (add/delete).'),
+      domain:   z.string().optional().describe('Hostname to map (add/delete).'),
+    }),
+    handler: async (args) => {
+      const c = getClient(args.instance);
+      if (args.action === 'list') return c.listLocalDNS();
+      if (!args.ip || !args.domain) throw new Error('add/delete require both ip and domain');
+      return args.action === 'add'
+        ? c.addLocalDNS(args.ip, args.domain)
+        : c.deleteLocalDNS(args.ip, args.domain);
+    },
+  },
+  {
+    name: 'pihole_local_cname',
+    description:
+      'Manage local CNAME records (config.dns.cnameRecords). action=list|add|delete; ' +
+      'add/delete require domain and target, ttl optional.',
+    schema: z.object({
+      instance: Instance,
+      action:   z.enum(['list', 'add', 'delete']),
+      domain:   z.string().optional().describe('CNAME alias (add/delete).'),
+      target:   z.string().optional().describe('Canonical target the alias points to (add/delete).'),
+      ttl:      z.number().int().positive().optional().describe('Optional TTL in seconds.'),
+    }),
+    handler: async (args) => {
+      const c = getClient(args.instance);
+      if (args.action === 'list') return c.listCnames();
+      if (!args.domain || !args.target) throw new Error('add/delete require both domain and target');
+      return args.action === 'add'
+        ? c.addCname(args.domain, args.target, args.ttl)
+        : c.deleteCname(args.domain, args.target, args.ttl);
+    },
+  },
 ];

@@ -7,12 +7,12 @@
     "url": "https://github.com/ranklancer/pihole-mcp",
     "source": "github"
   },
-  "version": "0.2.0",
+  "version": "0.3.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@ranklancer/pihole-mcp",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "transport": {
         "type": "stdio"
       },

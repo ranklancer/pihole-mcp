@@ -16,7 +16,7 @@ Perfect for **homelabbers** running multiple Pi-holes (primary + secondary, or p
 ## Features
 
 - **Multi-instance support** - configure 1 to N Pi-hole instances via environment variables
-- **Full Pi-hole v6 API coverage** - query logs, allow/deny lists, group management, gravity reload, stats
+- **Full Pi-hole v6 API coverage** - query logs, allow/deny lists (full CRUD), group management, blocking control, local DNS (A + CNAME) records, gravity reload, stats
 - **Smart regex detection** - automatically routes domains to exact or regex lists based on metacharacter analysis
 - **Regex landmine detector** - finds deny-exact entries that look like they should be regex (miscategorized rules)
 - **Docker-ready** - multi-stage Dockerfile with non-root user, health checks, and security hardening
@@ -98,6 +98,10 @@ Docker secrets are supported as a fallback: `/run/secrets/<name>_password` (lowe
 | `pihole_reload_lists` | Trigger gravity reload |
 | `pihole_group_management` | CRUD operations on Pi-hole groups |
 | `pihole_check_regex_types` | Detect miscategorized regex in deny-exact list |
+| `pihole_set_blocking` | Enable/disable blocking, with optional auto-revert timer |
+| `pihole_domain_management` | Update or delete an allow/deny domain (completes CRUD) |
+| `pihole_local_dns` | List/add/delete local DNS A records |
+| `pihole_local_cname` | List/add/delete local CNAME records |
 
 Every tool accepts an optional `instance` parameter to target a specific Pi-hole. Defaults to the first configured instance.
 
@@ -131,7 +135,7 @@ npx -y supergateway --streamableHttp http://localhost:3031/mcp
 
 ```bash
 curl http://localhost:3031/health
-# {"ok":true,"service":"pihole-mcp","version":"0.2.0"}
+# {"ok":true,"service":"pihole-mcp","version":"0.3.0"}
 ```
 
 ## Development

@@ -108,6 +108,93 @@ export class PiholeClient {
 
   async reloadGravity() { return this.call('POST', '/api/action/gravity'); }
 
+  // -- Blocking control ----------------------------------------------
+
+  /** Enable/disable DNS blocking; optional timer (seconds) auto-reverts. */
+  async setBlocking(enabled: boolean, timer?: number) {
+    return this.call('POST', '/api/dns/blocking', {
+      blocking: enabled,
+      timer: timer ?? null,
+    });
+  }
+
+  // -- Domain update / delete (completes allow/deny CRUD) ------------
+
+  async updateDomain(
+    listType: 'allow' | 'deny',
+    kind: 'exact' | 'regex',
+    domain: string,
+    opts: { comment?: string | null; groups?: number[]; enabled?: boolean } = {},
+  ) {
+    const path = `/api/domains/${listType}/${kind}/${encodeURIComponent(domain)}`;
+    // Pi-hole's domain PUT is a full replace, not a merge. Read the current
+    // entry first and only override the fields the caller supplied, so an
+    // update to (say) the comment can't silently reset groups or re-enable
+    // a disabled entry. Falls back to create-style defaults if the entry
+    // can't be read.
+    let current: any = {};
+    try {
+      const existing = await this.call('GET', path);
+      current = existing?.domains?.[0] ?? existing?.domain ?? {};
+    } catch { /* entry unreadable — fall through to defaults below */ }
+    return this.call('PUT', path, {
+      comment: opts.comment !== undefined ? opts.comment : (current.comment ?? null),
+      groups:  opts.groups  !== undefined ? opts.groups  : (current.groups ?? [0]),
+      enabled: opts.enabled !== undefined ? opts.enabled : (current.enabled ?? true),
+    });
+  }
+
+  async deleteDomain(listType: 'allow' | 'deny', kind: 'exact' | 'regex', domain: string) {
+    const path = `/api/domains/${listType}/${kind}/${encodeURIComponent(domain)}`;
+    return this.call('DELETE', path);
+  }
+
+  // -- Local DNS: A records (config.dns.hosts) -----------------------
+
+  async listLocalDNS() {
+    const res = await this.call('GET', '/api/config/dns/hosts');
+    const hosts: string[] = res?.config?.dns?.hosts ?? res?.hosts ?? [];
+    return {
+      records: hosts.map((entry: string) => {
+        const [ip, ...domains] = entry.trim().split(/\s+/);
+        return { ip, domains, raw: entry };
+      }),
+    };
+  }
+
+  async addLocalDNS(ip: string, domain: string) {
+    const value = `${ip} ${domain}`;
+    return this.call('PUT', `/api/config/dns/hosts/${encodeURIComponent(value)}`);
+  }
+
+  async deleteLocalDNS(ip: string, domain: string) {
+    const value = `${ip} ${domain}`;
+    return this.call('DELETE', `/api/config/dns/hosts/${encodeURIComponent(value)}`);
+  }
+
+  // -- Local DNS: CNAME records (config.dns.cnameRecords) ------------
+
+  async listCnames() {
+    const res = await this.call('GET', '/api/config/dns/cnameRecords');
+    const rows: string[] = res?.config?.dns?.cnameRecords ?? res?.cnameRecords ?? [];
+    return {
+      records: rows.map((entry: string) => {
+        const [domain, target, ttl] = entry.split(',');
+        return { domain, target, ttl: ttl && Number.isFinite(Number(ttl)) ? Number(ttl) : undefined, raw: entry };
+      }),
+    };
+  }
+
+  async addCname(domain: string, target: string, ttl?: number) {
+    const value = ttl !== undefined ? `${domain},${target},${ttl}` : `${domain},${target}`;
+    return this.call('PUT', `/api/config/dns/cnameRecords/${encodeURIComponent(value)}`);
+  }
+
+  async deleteCname(domain: string, target: string, ttl?: number) {
+    const value = ttl !== undefined ? `${domain},${target},${ttl}` : `${domain},${target}`;
+    return this.call('DELETE', `/api/config/dns/cnameRecords/${encodeURIComponent(value)}`);
+  }
+
   async groups(action: string, opts: GroupOpts = {}) {
     if (action === 'list') return this.call('GET', '/api/groups');
     if (action === 'create') {
