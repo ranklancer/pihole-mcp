@@ -1,6 +1,6 @@
 {
   "name": "@ranklancer/pihole-mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "MCP server for Pi-hole v6 API — multi-instance DNS ad-blocker management for AI assistants",
   "mcpName": "io.github.ranklancer/pihole-mcp",
   "private": false,
