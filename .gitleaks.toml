@@ -1,0 +1,12 @@
+# Gitleaks configuration — rebhahnomicon homelab
+# Commit-time + CI secret scanning. Uses the upstream gitleaks default
+# ruleset (pinned via the hook/workflow to v8.30.1).
+#
+# Policy: never weaken or delete rules to silence a finding. Confirmed
+# false positives are suppressed by fingerprint in .gitleaksignore only.
+# Real secrets must be ROTATED, not allowlisted.
+
+title = "rebhahnomicon-gitleaks"
+
+[extend]
+useDefault = true
