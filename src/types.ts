@@ -19,6 +19,7 @@ export interface QueryOpts {
   from?: number;
   until?: number;
   client?: string;
+  clientName?: string;
   domain?: string;
   status?: string;
 }
@@ -28,6 +29,13 @@ export interface GroupOpts {
   name?: string;
   enabled?: boolean;
   comment?: string;
+}
+
+/** Options for client management operations. */
+export interface ClientOpts {
+  client?: string;
+  comment?: string;
+  groups?: number[];
 }
 
 // Regex metachars that NEVER appear in plain DNS labels.

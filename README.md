@@ -16,11 +16,11 @@ Perfect for **homelabbers** running multiple Pi-holes (primary + secondary, or p
 ## Features
 
 - **Multi-instance support** - configure 1 to N Pi-hole instances via environment variables
-- **Full Pi-hole v6 API coverage** - query logs, allow/deny lists (full CRUD), group management, blocking control, local DNS (A + CNAME) records, gravity reload, stats
+- **Full Pi-hole v6 API coverage** - query logs, allow/deny lists (full CRUD), group and client management, blocking control, local DNS (A + CNAME) records, gravity reload, stats
 - **Smart regex detection** - automatically routes domains to exact or regex lists based on metacharacter analysis
 - **Regex landmine detector** - finds deny-exact entries that look like they should be regex (miscategorized rules)
 - **Docker-ready** - multi-stage Dockerfile with non-root user, health checks, and security hardening
-- **Streamable HTTP transport** - works with any MCP client that supports HTTP-based MCP
+- **Streamable HTTP or stdio transport** - run as a long-lived HTTP service, or let the MCP client spawn it on demand
 - **Docker secrets support** - passwords via env vars or `/run/secrets/` files
 
 ## Quick Start
@@ -51,6 +51,41 @@ export PIHOLE_BASE_URL=http://pihole.example.com
 export PIHOLE_PASSWORD=your-password
 npm start
 ```
+
+### Local on demand (stdio, no Docker)
+
+The MCP client starts the server as a child process when needed and talks to it over stdin/stdout. No port is opened and nothing keeps running in the background.
+
+```bash
+npm ci
+npm run build
+cp .env.example .env
+chmod 600 .env
+# Edit .env with your Pi-hole URL(s) and password(s)
+```
+
+Register it with Claude Code (user scope):
+
+```bash
+claude mcp add --scope user pihole -- bash -c \
+  'set -a; . ~/path/to/pihole-mcp/.env; set +a; MCP_TRANSPORT=stdio exec node ~/path/to/pihole-mcp/dist/index.js'
+```
+
+Or add it manually to your MCP client config:
+
+```json
+{
+  "mcpServers": {
+    "pihole": {
+      "type": "stdio",
+      "command": "bash",
+      "args": ["-c", "set -a; . ~/path/to/pihole-mcp/.env; set +a; MCP_TRANSPORT=stdio exec node ~/path/to/pihole-mcp/dist/index.js"]
+    }
+  }
+}
+```
+
+`HOST` and `PORT` from `.env` are ignored in stdio mode.
 
 ## Configuration
 
@@ -89,7 +124,7 @@ Docker secrets are supported as a fallback: `/run/secrets/<name>_password` (lowe
 
 | Tool | Description |
 |---|---|
-| `pihole_query_log` | Fetch query log with filters (limit, time range, client, domain, status) |
+| `pihole_query_log` | Fetch query log with filters (limit, time range, client IP or name, domain, status) |
 | `pihole_allow_domain` | Add to allowlist (auto-detects exact vs regex) |
 | `pihole_deny_domain` | Add to denylist (auto-detects exact vs regex) |
 | `pihole_list_allowlist` | List all allowlist entries (exact + regex merged) |
@@ -97,6 +132,7 @@ Docker secrets are supported as a fallback: `/run/secrets/<name>_password` (lowe
 | `pihole_stats_summary` | Get Pi-hole statistics summary |
 | `pihole_reload_lists` | Trigger gravity reload |
 | `pihole_group_management` | CRUD operations on Pi-hole groups |
+| `pihole_client_management` | CRUD operations on Pi-hole clients and their group assignments |
 | `pihole_check_regex_types` | Detect miscategorized regex in deny-exact list |
 | `pihole_set_blocking` | Enable/disable blocking, with optional auto-revert timer |
 | `pihole_domain_management` | Update or delete an allow/deny domain (completes CRUD) |
@@ -107,7 +143,9 @@ Every tool accepts an optional `instance` parameter to target a specific Pi-hole
 
 ## Connecting to Your MCP Client
 
-The server listens on `http://HOST:PORT/mcp` (default: `http://localhost:3000/mcp`).
+This section applies to the HTTP transport (Docker or `npm start`). For stdio, see [Local on demand](#local-on-demand-stdio-no-docker).
+
+The server listens on `http://HOST:PORT/mcp` (default: `http://localhost:3000/mcp`). The HTTP endpoint has no authentication, so keep it bound to localhost or a trusted network.
 
 ### Claude Desktop / Claude Code
 
@@ -121,14 +159,6 @@ Add to your MCP settings:
     }
   }
 }
-```
-
-### Supergateway (stdio wrapper)
-
-If your MCP client only supports stdio transport, use [supergateway](https://github.com/supercorp-ai/supergateway):
-
-```bash
-npx -y supergateway --streamableHttp http://localhost:3031/mcp
 ```
 
 ## Health Check

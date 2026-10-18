@@ -18,6 +18,14 @@
       },
       "environmentVariables": [
         {
+          "name": "MCP_TRANSPORT",
+          "description": "Must be 'stdio' for stdio transport; otherwise the server starts the HTTP transport",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": false,
+          "default": "stdio"
+        },
+        {
           "name": "PIHOLE_INSTANCES",
           "description": "Comma-separated list of Pi-hole instance names (e.g. 'pihole' or 'primary,secondary')",
           "isRequired": true,

@@ -37,13 +37,15 @@ export const toolDefs: ToolDef[] = [
       limit:  z.number().int().positive().max(10000).optional(),
       from:   z.number().int().optional(),
       until:  z.number().int().optional(),
-      client: z.string().optional(),
+      client: z.string().optional().describe('Client IP address (wildcards allowed, e.g. 192.168.1.*).'),
+      client_name: z.string().optional().describe('Client hostname (wildcards allowed).'),
       domain: z.string().optional(),
       status: z.string().optional(),
     }),
     handler: async (args) => getClient(args.instance)
       .queries({ limit: args.limit, from: args.from, until: args.until,
-                 client: args.client, domain: args.domain, status: args.status }),
+                 client: args.client, clientName: args.client_name,
+                 domain: args.domain, status: args.status }),
   },
   {
     name: 'pihole_allow_domain',
@@ -101,6 +103,23 @@ export const toolDefs: ToolDef[] = [
       comment:  z.string().optional(),
     }),
     handler: async (args) => getClient(args.instance).groups(args.action, args),
+  },
+  {
+    name: 'pihole_client_management',
+    description:
+      'List/add/update/delete Pi-hole clients and their group assignments via /api/clients. ' +
+      'Clients not configured here implicitly belong to the Default group (id 0). ' +
+      'update preserves any fields you omit (read-modify-write).',
+    schema: z.object({
+      instance: Instance,
+      action:   z.enum(['list', 'add', 'update', 'delete']),
+      client:   z.string().min(1).optional()
+        .describe('add/update/delete: client IP, MAC, hostname, CIDR subnet or interface (":eth0").'),
+      comment:  z.string().optional(),
+      groups:   z.array(z.number().int()).optional()
+        .describe('Group IDs the client belongs to. add defaults to [0]; omit on update to keep current.'),
+    }),
+    handler: async (args) => getClient(args.instance).clients(args.action, args),
   },
   {
     name: 'pihole_check_regex_types',
