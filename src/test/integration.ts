@@ -16,6 +16,9 @@ async function main() {
   const s = await c.statsSummary();
   console.log('queries.total =', s.queries?.total, 'blocked =', s.queries?.blocked, 'percent =', s.queries?.percent_blocked);
 
+  console.log('--- clients ---');
+  console.log(JSON.stringify(await c.clients('list'), null, 2));
+
   console.log('--- check_regex_types ---');
   console.log(JSON.stringify(await c.checkRegexTypes(), null, 2));
 

@@ -2,6 +2,7 @@
 import http from 'node:http';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { toolDefs } from './tools.js';
@@ -149,9 +150,14 @@ const httpServer = http.createServer(async (req, res) => {
   res.writeHead(404).end('not found');
 });
 
-httpServer.listen(PORT, HOST, () => {
-  console.log(`pihole-mcp listening on http://${HOST}:${PORT}`);
-});
+// stdout carries the JSON-RPC stream in stdio mode, so nothing else may log to it.
+if (process.env.MCP_TRANSPORT === 'stdio') {
+  await createServer().connect(new StdioServerTransport());
+} else {
+  httpServer.listen(PORT, HOST, () => {
+    console.log(`pihole-mcp listening on http://${HOST}:${PORT}`);
+  });
+}
 
 function shutdown() { httpServer.close(); process.exit(0); }
 process.on('SIGTERM', shutdown);
