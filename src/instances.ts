@@ -80,3 +80,8 @@ export function getClient(name?: string): PiholeClient {
 export function allInstanceNames(): string[] {
   return [...instanceConfigs.keys()];
 }
+
+/** Release the Pi-hole API sessions of every client created so far (best effort). */
+export async function logoutAll(): Promise<void> {
+  await Promise.allSettled([...clients.values()].map(c => c.logout()));
+}

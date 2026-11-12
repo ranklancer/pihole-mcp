@@ -6,6 +6,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { toolDefs } from './tools.js';
+import { logoutAll } from './instances.js';
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 const HOST = process.env.HOST ?? '0.0.0.0';
@@ -159,6 +160,15 @@ if (process.env.MCP_TRANSPORT === 'stdio') {
   });
 }
 
-function shutdown() { httpServer.close(); process.exit(0); }
+// Release Pi-hole API seats before exiting; logout() has its own short timeout,
+// the race is a backstop so a stuck instance cannot block shutdown.
+let shuttingDown = false;
+async function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  httpServer.close();
+  await Promise.race([logoutAll(), new Promise(r => setTimeout(r, 3_000))]);
+  process.exit(0);
+}
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
