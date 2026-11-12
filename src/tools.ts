@@ -218,4 +218,55 @@ export const toolDefs: ToolDef[] = [
         : c.deleteCname(args.domain, args.target, args.ttl);
     },
   },
+  {
+    name: 'pihole_stats',
+    description:
+      'READ-ONLY Pi-hole metrics. kind=top_domains|top_clients (GET /api/stats/top_*; optional count and ' +
+      'blocked, blocked=true returns blocked domains/clients), upstreams (/api/stats/upstreams), ' +
+      'query_types (/api/stats/query_types), recent_blocked (/api/stats/recent_blocked; optional count), ' +
+      'history (/api/history, activity over time), history_clients (/api/history/clients; count maps to N, ' +
+      '0 = all clients). Unsupported count/blocked for a kind is an error.',
+    schema: z.object({
+      instance: Instance,
+      kind: z.enum(['top_domains', 'top_clients', 'upstreams', 'query_types',
+                    'recent_blocked', 'history', 'history_clients']),
+      count: z.number().int().min(0).optional()
+        .describe('top_domains/top_clients/recent_blocked/history_clients: max items to return.'),
+      blocked: z.boolean().optional()
+        .describe('top_domains/top_clients only: true = blocked queries, false = permitted (default).'),
+    }),
+    handler: async (args) => getClient(args.instance).stats(args.kind, { count: args.count, blocked: args.blocked }),
+  },
+  {
+    name: 'pihole_blocking_status',
+    description:
+      'READ-ONLY: current DNS blocking state and remaining timer (GET /api/dns/blocking). ' +
+      'Use pihole_set_blocking to change it.',
+    schema: z.object({ instance: Instance }),
+    handler: async (args) => getClient(args.instance).blockingStatus(),
+  },
+  {
+    name: 'pihole_adlist_management',
+    description:
+      'Manage subscribed adlists via /api/lists. action=list|add|update|delete. ' +
+      'add defaults type to block, comment to none, groups to [0], enabled to true. ' +
+      'update preserves any fields you omit (read-modify-write) and requires type. ' +
+      'delete is destructive and requires an explicit action=delete plus address and type. ' +
+      'Adding, removing or enabling/disabling lists only takes effect after a gravity ' +
+      'reload: run pihole_reload_lists afterwards.',
+    schema: z.object({
+      instance: Instance,
+      action:   z.enum(['list', 'add', 'update', 'delete']),
+      address:  z.string().min(1).optional()
+        .describe('add/update/delete: list URL or file path (the list identifier).'),
+      type:     z.enum(['allow', 'block']).optional()
+        .describe('list: optional filter. add: defaults to block. update/delete: required.'),
+      comment:  z.string().optional(),
+      groups:   z.array(z.number().int()).optional()
+        .describe('Group IDs the list belongs to. add defaults to [0]; omit on update to keep current.'),
+      enabled:  z.boolean().optional()
+        .describe('add defaults to true; omit on update to keep current.'),
+    }),
+    handler: async (args) => getClient(args.instance).adlists(args.action, args),
+  },
 ];

@@ -38,6 +38,19 @@ export interface ClientOpts {
   groups?: number[];
 }
 
+export type StatsKind =
+  | 'top_domains' | 'top_clients' | 'upstreams' | 'query_types'
+  | 'recent_blocked' | 'history' | 'history_clients';
+
+/** Options for adlist management operations. */
+export interface AdlistOpts {
+  address?: string;
+  type?: 'allow' | 'block';
+  comment?: string;
+  groups?: number[];
+  enabled?: boolean;
+}
+
 // Regex metachars that NEVER appear in plain DNS labels.
 // Note: '.' is intentionally excluded — every legitimate domain has dots.
 // A real Pi-hole regex pattern always contains at least one of these.

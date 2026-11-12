@@ -1,6 +1,8 @@
 import { request, Agent, Dispatcher } from 'undici';
 import { looksLikeRegex } from './types.js';
-import type { PiholeInstanceConfig, PiholeSession, QueryOpts, GroupOpts, ClientOpts } from './types.js';
+import type {
+  PiholeInstanceConfig, PiholeSession, QueryOpts, GroupOpts, ClientOpts, StatsKind, AdlistOpts,
+} from './types.js';
 
 const SESSION_TTL_MS = 4 * 60 * 1000;
 
@@ -194,6 +196,83 @@ export class PiholeClient {
   async deleteCname(domain: string, target: string, ttl?: number) {
     const value = ttl !== undefined ? `${domain},${target},${ttl}` : `${domain},${target}`;
     return this.call('DELETE', `/api/config/dns/cnameRecords/${encodeURIComponent(value)}`);
+  }
+
+  // -- Read-only stats (stats.yaml, history.yaml) --------------------
+
+  /**
+   * Read one of the read-only metrics endpoints. `blocked` is only valid for
+   * top_domains/top_clients; `count` for top_domains, top_clients,
+   * recent_blocked and history_clients (sent as `N` there). Unsupported
+   * parameters are rejected rather than silently dropped.
+   */
+  async stats(kind: StatsKind, opts: { count?: number; blocked?: boolean } = {}) {
+    const paths: Record<StatsKind, string> = {
+      top_domains: '/api/stats/top_domains',
+      top_clients: '/api/stats/top_clients',
+      upstreams: '/api/stats/upstreams',
+      query_types: '/api/stats/query_types',
+      recent_blocked: '/api/stats/recent_blocked',
+      history: '/api/history',
+      history_clients: '/api/history/clients',
+    };
+    const path = paths[kind];
+    if (!path) throw new Error(`unknown stats kind: ${kind}`);
+    const takesBlocked = kind === 'top_domains' || kind === 'top_clients';
+    const takesCount = takesBlocked || kind === 'recent_blocked' || kind === 'history_clients';
+    if (opts.blocked !== undefined && !takesBlocked) {
+      throw new Error(`blocked is only supported for top_domains and top_clients, not ${kind}`);
+    }
+    if (opts.count !== undefined && !takesCount) {
+      throw new Error(`count is not supported for ${kind}`);
+    }
+    const qs = new URLSearchParams();
+    if (opts.blocked !== undefined) qs.set('blocked', String(opts.blocked));
+    if (opts.count !== undefined) qs.set(kind === 'history_clients' ? 'N' : 'count', String(opts.count));
+    const q = qs.toString();
+    return this.call('GET', `${path}${q ? '?' + q : ''}`);
+  }
+
+  /** GET /api/dns/blocking: current blocking state and remaining timer. */
+  async blockingStatus() { return this.call('GET', '/api/dns/blocking'); }
+
+  // -- Adlists (lists.yaml) ------------------------------------------
+
+  async adlists(action: string, opts: AdlistOpts = {}) {
+    if (action === 'list') {
+      const qs = new URLSearchParams();
+      if (opts.type) qs.set('type', opts.type);
+      const q = qs.toString();
+      return this.call('GET', `/api/lists${q ? '?' + q : ''}`);
+    }
+    if (!opts.address) throw new Error(`adlist ${action} requires address`);
+    const path = `/api/lists/${encodeURIComponent(opts.address)}`;
+    if (action === 'add') {
+      const type = opts.type ?? 'block';
+      return this.call('POST', `/api/lists?type=${type}`, {
+        address: opts.address,
+        comment: opts.comment ?? null,
+        groups: opts.groups ?? [0],
+        enabled: opts.enabled ?? true,
+      });
+    }
+    // The same address may exist as both allow and block, so update/delete
+    // must name the type explicitly rather than guess.
+    if (!opts.type) throw new Error(`adlist ${action} requires type (allow|block)`);
+    const typeQs = `?type=${opts.type}`;
+    if (action === 'update') {
+      // PUT is a full replace: read first so omitted fields keep their current values.
+      const current = (await this.call('GET', `${path}${typeQs}`))?.lists?.[0];
+      if (!current) throw new Error(`[${this.cfg.name}] adlist not found: ${opts.address} (${opts.type})`);
+      return this.call('PUT', `${path}${typeQs}`, {
+        type: opts.type,
+        comment: opts.comment !== undefined ? opts.comment : (current.comment ?? null),
+        groups:  opts.groups  !== undefined ? opts.groups  : (current.groups ?? [0]),
+        enabled: opts.enabled !== undefined ? opts.enabled : (current.enabled ?? true),
+      });
+    }
+    if (action === 'delete') return this.call('DELETE', `${path}${typeQs}`);
+    throw new Error(`unknown adlist action: ${action}`);
   }
 
   async groups(action: string, opts: GroupOpts = {}) {
