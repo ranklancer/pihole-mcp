@@ -19,6 +19,16 @@ npm run build   # compile TypeScript
 - Use clear, conventional commit messages (e.g. `feat:`, `fix:`, `chore:`,
   `docs:`, `ci:`).
 
+## Supported Node versions
+
+`engines.node` is `>=22`. The CI matrix must only list versions at or above that floor; do not raise `engines` past a version CI does not test.
+
+## Releasing
+
+1. Bump `version` in `package.json` and `server.json` (both the top-level and the `packages[]` entry) and the `version` strings in `src/index.ts`, and land the bump through a normal pull request.
+2. Publish a GitHub Release tagged `vX.Y.Z`. The `docker.yml` workflow runs on `release: published` and pushes `ghcr.io/ranklancer/pihole-mcp` tagged `X.Y.Z`, `X.Y` and `latest`.
+3. Publish to npm from a clean checkout of the tag: `npm ci && npm publish --access public` (`prepublishOnly` runs the build). There is currently no workflow in this repository that publishes to npm, so this step is manual.
+
 ## Reporting Issues
 
 Use the issue templates. For security-sensitive reports, follow

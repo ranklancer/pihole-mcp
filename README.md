@@ -1,7 +1,7 @@
 # pihole-mcp
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
 [![Pi-hole v6](https://img.shields.io/badge/Pi--hole-v6-red.svg)](https://pi-hole.net)
 [![MCP](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-purple.svg)](https://modelcontextprotocol.io)
 
@@ -25,7 +25,45 @@ Perfect for **homelabbers** running multiple Pi-holes (primary + secondary, or p
 
 ## Quick Start
 
-### Docker (recommended)
+### npx (stdio, no clone, no Docker)
+
+> **Requires `@ranklancer/pihole-mcp` 0.3.0 or later.** The only version on npm at the time of writing is 0.2.0, which predates stdio support (`MCP_TRANSPORT=stdio`) and starts an HTTP server instead, so the configs below do not work with it. Until 0.3.0 is published, use one of the other options below. Check with `npm view @ranklancer/pihole-mcp version`.
+
+The MCP client starts the server as a child process through `npx` and talks to it over stdin/stdout. Nothing is cloned, no port is opened and nothing keeps running in the background. Requires Node.js 22 or newer.
+
+Add this to your MCP client config (for Claude Desktop: `claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "pihole": {
+      "command": "npx",
+      "args": ["-y", "@ranklancer/pihole-mcp"],
+      "env": {
+        "MCP_TRANSPORT": "stdio",
+        "PIHOLE_INSTANCES": "pihole",
+        "PIHOLE_BASE_URL": "http://pihole.example.com",
+        "PIHOLE_PASSWORD": "your-pihole-api-password"
+      }
+    }
+  }
+}
+```
+
+Or with Claude Code:
+
+```bash
+claude mcp add --scope user pihole \
+  -e MCP_TRANSPORT=stdio \
+  -e PIHOLE_INSTANCES=pihole \
+  -e PIHOLE_BASE_URL=http://pihole.example.com \
+  -e PIHOLE_PASSWORD=your-pihole-api-password \
+  -- npx -y @ranklancer/pihole-mcp
+```
+
+The password sits in plain text in the client config; keep that file private (`chmod 600`). For several instances, see [Configuration](#configuration). To pin a release, use `@ranklancer/pihole-mcp@0.3.0` in `args`. For a long-lived HTTP endpoint, use Docker below.
+
+### Docker (HTTP endpoint)
 
 ```bash
 git clone https://github.com/ranklancer/pihole-mcp.git
@@ -178,7 +216,7 @@ npm start       # Run the server
 
 ## Requirements
 
-- Node.js >= 20
+- Node.js >= 22 (Node 20 reached end of life on 2026-04-30)
 - Pi-hole v6 with API access enabled
 - Network connectivity to your Pi-hole instance(s)
 
