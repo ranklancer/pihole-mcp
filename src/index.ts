@@ -11,64 +11,20 @@ const PORT = parseInt(process.env.PORT ?? '3000', 10);
 const HOST = process.env.HOST ?? '0.0.0.0';
 
 /**
- * Minimal Zod-to-JSON-Schema converter for MCP tool registration.
+ * Convert a tool's Zod schema to the JSON Schema advertised via tools/list.
  *
- * Recurses through the schema shapes this server uses — objects, strings,
- * numbers, booleans, enums, arrays and nested objects — so array/object
- * inputs are described faithfully instead of being flattened to `string`.
- * Optional/default/nullable wrappers are unwrapped for typing; optional and
- * default fields are marked non-required.
+ * Uses Zod 4's built-in `z.toJSONSchema` (the documented replacement for
+ * hand-rolled converters / zod-to-json-schema). `io: 'input'` describes what
+ * callers send, so fields with `.default()` are not marked required;
+ * `draft-07` is the dialect MCP clients handle most widely. The `$schema`
+ * key is dropped since MCP tool inputSchema is implicitly a JSON Schema object.
  */
-function jsonSchemaForType(type: z.ZodType<any>): Record<string, any> {
-  let v: any = type;
-  while (
-    v instanceof z.ZodOptional ||
-    v instanceof z.ZodDefault ||
-    v instanceof z.ZodNullable
-  ) {
-    v = v._def.innerType;
-  }
-
-  if (v instanceof z.ZodString)  return { type: 'string' };
-  if (v instanceof z.ZodNumber)  return { type: 'number' };
-  if (v instanceof z.ZodBoolean) return { type: 'boolean' };
-  if (v instanceof z.ZodEnum)    return { type: 'string', enum: v._def.values };
-  if (v instanceof z.ZodArray)   return { type: 'array', items: jsonSchemaForType(v._def.type) };
-  if (v instanceof z.ZodObject)  return jsonSchemaForObject(v as z.ZodObject<any>);
-  return { type: 'string' };
-}
-
-function jsonSchemaForObject(schema: z.ZodObject<any>): Record<string, any> {
-  const shape = schema.shape;
-  const properties: Record<string, any> = {};
-  const required: string[] = [];
-
-  for (const [key, val] of Object.entries(shape)) {
-    let optional = false;
-    let inner: any = val;
-    while (
-      inner instanceof z.ZodOptional ||
-      inner instanceof z.ZodDefault ||
-      inner instanceof z.ZodNullable
-    ) {
-      if (inner instanceof z.ZodOptional || inner instanceof z.ZodDefault) optional = true;
-      inner = inner._def.innerType;
-    }
-
-    const prop = jsonSchemaForType(inner);
-    const description = (val as any)?._def?.description ?? (inner as any)?._def?.description;
-    if (description) prop.description = description;
-
-    properties[key] = prop;
-    if (!optional) required.push(key);
-  }
-
-  return { type: 'object', properties, required };
-}
-
 function zodToJsonSchema(schema: z.ZodType<any>): Record<string, any> {
-  if (!(schema instanceof z.ZodObject)) return { type: 'object' };
-  return jsonSchemaForObject(schema as z.ZodObject<any>);
+  const { $schema: _ignored, ...json } = z.toJSONSchema(schema, {
+    target: 'draft-07',
+    io: 'input',
+  }) as Record<string, any>;
+  return json.type === 'object' ? json : { type: 'object' };
 }
 
 // ── MCP server setup ────────────────────────────────────────────────
