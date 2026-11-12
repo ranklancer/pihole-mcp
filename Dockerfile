@@ -13,6 +13,12 @@ COPY --from=build /build/package.json /build/package-lock.json* ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /build/dist/ dist/
 USER appuser
+# Inside a container the server must listen on all interfaces, or published
+# ports cannot reach it. A non-loopback bind is refused unless explicitly opted
+# into (issue #43), so the image opts in here, deliberately. Restrict exposure
+# on the host side (publish to 127.0.0.1, or set MCP_AUTH_TOKEN_FILE).
+ENV HOST=0.0.0.0 \
+    MCP_ALLOW_NON_LOOPBACK=true
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=20s \
   CMD wget -qO- http://127.0.0.1:3000/health || exit 1

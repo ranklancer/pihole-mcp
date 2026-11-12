@@ -20,8 +20,17 @@ services:
         exec node dist/index.js
     environment:
       NODE_ENV: production
+      # The container must bind all interfaces so the published port reaches it.
+      # A non-loopback bind is refused unless MCP_ALLOW_NON_LOOPBACK is "true".
       HOST: 0.0.0.0
+      MCP_ALLOW_NON_LOOPBACK: "true"
       PORT: "3000"
+      # Host-header allowlist (DNS-rebinding protection). The default
+      # (localhost,127.0.0.1,[::1]) matches the 127.0.0.1 port mapping below.
+      # Add the name or IP clients use if you publish beyond loopback:
+      # MCP_ALLOWED_HOSTS: localhost,127.0.0.1,pihole-mcp.lan
+      # Recommended: require a bearer token on /mcp (see the secret below).
+      # MCP_AUTH_TOKEN_FILE: /run/secrets/mcp_auth_token
       TZ: ${TZ:-UTC}
       PIHOLE_INSTANCES: ${PIHOLE_INSTANCES:-pihole}
       PIHOLE_BASE_URL: ${PIHOLE_BASE_URL}
@@ -31,6 +40,7 @@ services:
     secrets:
       - pihole_password
       # - pihole2_password
+      # - mcp_auth_token
     ports:
       - "127.0.0.1:3031:3000"
     restart: unless-stopped
@@ -60,3 +70,6 @@ secrets:
     file: ./secrets/pihole_password
   # pihole2_password:
   #   file: ./secrets/pihole2_password
+  # Generate with: openssl rand -hex 32 > secrets/mcp_auth_token && chmod 600 secrets/mcp_auth_token
+  # mcp_auth_token:
+  #   file: ./secrets/mcp_auth_token

@@ -41,6 +41,19 @@ Passwords are provided as Docker secrets (files under `secrets/`), which the
 server reads from `/run/secrets/<instance>_password`. See the README for the
 instance-naming rules.
 
+### Network exposure
+
+The image sets `HOST=0.0.0.0` and `MCP_ALLOW_NON_LOOPBACK=true`, because the
+server must listen on all interfaces inside the container. Outside a container
+the default is `127.0.0.1` and a non-loopback bind is refused without that
+opt-in. The example compose file publishes the port on `127.0.0.1` only. If you
+publish it on a LAN address, also:
+
+- add the hostname or IP clients use to `MCP_ALLOWED_HOSTS` (otherwise `403 Invalid Host`), and
+- set a bearer token: uncomment the `mcp_auth_token` secret and `MCP_AUTH_TOKEN_FILE` in the compose file.
+
+See [HTTP transport security](../README.md#http-transport-security).
+
 ## Building from source
 
 ```bash
@@ -50,7 +63,7 @@ docker build -f Dockerfile -t pihole-mcp:local .
 ## Verify a deploy
 
 ```bash
-curl http://<host>:<port>/health
+curl http://127.0.0.1:<port>/health   # or a hostname listed in MCP_ALLOWED_HOSTS
 # {"ok":true,"service":"pihole-mcp","version":"0.3.0"}
 
 docker ps --filter name=pihole-mcp --format '{{.ID}}  {{.Image}}  {{.Status}}'

@@ -145,7 +145,7 @@ Every tool accepts an optional `instance` parameter to target a specific Pi-hole
 
 This section applies to the HTTP transport (Docker or `npm start`). For stdio, see [Local on demand](#local-on-demand-stdio-no-docker).
 
-The server listens on `http://HOST:PORT/mcp` (default: `http://localhost:3000/mcp`). The HTTP endpoint has no authentication, so keep it bound to localhost or a trusted network.
+The server listens on `http://HOST:PORT/mcp` (default: `http://127.0.0.1:3000/mcp`). See [HTTP transport security](#http-transport-security) before exposing it beyond loopback.
 
 ### Claude Desktop / Claude Code
 
@@ -161,12 +161,54 @@ Add to your MCP settings:
 }
 ```
 
+If you set a bearer token, send it in the `Authorization` header. Claude Code expands environment variables in `.mcp.json`, so the token stays out of the file:
+
+```json
+{
+  "mcpServers": {
+    "pihole": {
+      "type": "http",
+      "url": "http://localhost:3031/mcp",
+      "headers": { "Authorization": "Bearer ${PIHOLE_MCP_TOKEN}" }
+    }
+  }
+}
+```
+
+## HTTP transport security
+
+These tools can disable blocking and delete domains and DNS records, so the HTTP endpoint is locked down by default, following the [MCP Streamable HTTP security requirements](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#security-warning):
+
+| Variable | Default | Effect |
+|---|---|---|
+| `HOST` | `127.0.0.1` | Bind address. |
+| `MCP_ALLOW_NON_LOOPBACK` | unset | Must be `true` to bind any non-loopback address (e.g. `0.0.0.0`); otherwise the server refuses to start. The Docker image sets it, because a container must bind all interfaces for a published port to reach it. |
+| `MCP_ALLOWED_HOSTS` | `localhost,127.0.0.1,[::1]` | Hostnames accepted in the `Host` header (port-agnostic; DNS-rebinding protection via the MCP SDK's `hostHeaderValidation`). Other hosts get `403`. Add the name or IP your clients use if you reach the server by anything else. |
+| `MCP_ALLOWED_ORIGINS` | none | Exact browser origins (e.g. `http://localhost:6274`) allowed to call the server. A request whose `Origin` header is present and not listed gets `403`. Requests without `Origin` (non-browser MCP clients) are unaffected. |
+| `MCP_AUTH_TOKEN_FILE` | unset | Path to a file holding a bearer token (e.g. a Docker secret at `/run/secrets/mcp_auth_token`). When set, `/mcp` requires `Authorization: Bearer <token>` and answers `401` otherwise. Minimum 32 characters: `openssl rand -hex 32`. If the file is missing or empty the server refuses to start. |
+| `MCP_AUTH_TOKEN` | unset | Same, read from the environment. Set only one of the two. Prefer the file form. |
+
+The token is compared in constant time and is never logged. There is no CLI flag for it by design.
+
+`/health` needs no token (so container health checks need no secret) and returns only static service metadata; the `Host` and `Origin` checks still apply to it.
+
+If you bind beyond loopback, set a token. The server logs a warning at startup when it is bound to a non-loopback address without one.
+
+### Upgrading from 0.3.0 (behaviour change)
+
+- The default `HOST` changed from `0.0.0.0` to `127.0.0.1`. A non-Docker install that relied on the old default, or sets `HOST=0.0.0.0` in `.env`, must now also set `MCP_ALLOW_NON_LOOPBACK=true`, or the server exits with an error saying so.
+- `Host` headers are now validated. If clients reach the server by a LAN IP or hostname (rather than `localhost`/`127.0.0.1`), add it to `MCP_ALLOWED_HOSTS` or requests get `403 Invalid Host`.
+- Requests from a browser origin not in `MCP_ALLOWED_ORIGINS` now get `403`.
+- Docker users with the shipped image and the example compose file (port published on `127.0.0.1`) need no change.
+
 ## Health Check
 
 ```bash
 curl http://localhost:3031/health
 # {"ok":true,"service":"pihole-mcp","version":"0.3.0"}
 ```
+
+`/health` is unauthenticated; see [HTTP transport security](#http-transport-security).
 
 ## Development
 
