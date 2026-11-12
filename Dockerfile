@@ -15,8 +15,9 @@ COPY --from=build /build/dist/ dist/
 USER appuser
 # Inside a container the server must listen on all interfaces, or published
 # ports cannot reach it. A non-loopback bind is refused unless explicitly opted
-# into (issue #43), so the image opts in here, deliberately. Restrict exposure
-# on the host side (publish to 127.0.0.1, or set MCP_AUTH_TOKEN_FILE).
+# into (issue #43), so the image opts in here, deliberately. The image does NOT
+# opt out of authentication: the operator must set MCP_AUTH_TOKEN_FILE (or
+# MCP_AUTH_TOKEN), or explicitly set MCP_ALLOW_UNAUTHENTICATED=true.
 ENV HOST=0.0.0.0 \
     MCP_ALLOW_NON_LOOPBACK=true
 EXPOSE 3000

@@ -159,7 +159,10 @@ if (process.env.MCP_TRANSPORT === 'stdio') {
     process.exit(1);
   }
   const { host, port } = cfg;
-  httpServer = createHttpApp(cfg, handleMcp, VERSION).listen(port, host, () => {
+  // Log from the 'listening' event: Express 5's listen() callback also fires on
+  // a bind error, which would print a false "listening" line first.
+  httpServer = createHttpApp(cfg, handleMcp, VERSION).listen(port, host);
+  httpServer.on('listening', () => {
     const shown = host.includes(':') ? `[${host}]` : host;
     console.log(`pihole-mcp listening on http://${shown}:${port}`);
     console.log(
@@ -169,8 +172,8 @@ if (process.env.MCP_TRANSPORT === 'stdio') {
     );
     if (!isLoopbackHost(host) && !cfg.authToken) {
       console.warn(
-        `pihole-mcp: WARNING: bound to non-loopback ${host} with no MCP_AUTH_TOKEN. ` +
-        'Anyone who can reach this port can change your Pi-hole configuration.',
+        `pihole-mcp: WARNING: bound to non-loopback ${host} with authentication disabled ` +
+        '(MCP_ALLOW_UNAUTHENTICATED=true). Anyone who can reach this port can change your Pi-hole configuration.',
       );
     }
   });

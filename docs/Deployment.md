@@ -28,6 +28,7 @@ cp .env.example .env
 mkdir -p secrets
 printf '%s' 'your-pihole-password' > secrets/pihole_password
 chmod 600 secrets/pihole_password
+openssl rand -hex 32 > secrets/mcp_auth_token   # bearer token for /mcp
 
 docker compose up -d
 ```
@@ -46,11 +47,18 @@ instance-naming rules.
 The image sets `HOST=0.0.0.0` and `MCP_ALLOW_NON_LOOPBACK=true`, because the
 server must listen on all interfaces inside the container. Outside a container
 the default is `127.0.0.1` and a non-loopback bind is refused without that
-opt-in. The example compose file publishes the port on `127.0.0.1` only. If you
-publish it on a LAN address, also:
+opt-in.
 
-- add the hostname or IP clients use to `MCP_ALLOWED_HOSTS` (otherwise `403 Invalid Host`), and
-- set a bearer token: uncomment the `mcp_auth_token` secret and `MCP_AUTH_TOKEN_FILE` in the compose file.
+A non-loopback bind also needs a bearer token, so the container refuses to
+start without `MCP_AUTH_TOKEN_FILE` (the example compose file mounts
+`secrets/mcp_auth_token` for it) unless you set `MCP_ALLOW_UNAUTHENTICATED=true`.
+
+The example compose file publishes the port on `127.0.0.1` only. `localhost`,
+`127.0.0.1` and `[::1]` are always accepted in the `Host` header (the image
+health check relies on this). Add any other name clients use to
+`MCP_ALLOWED_HOSTS`, such as the service name `pihole-mcp` for calls from other
+containers, or a LAN name/IP if you publish wider; otherwise they get
+`403 Invalid Host`.
 
 See [HTTP transport security](../README.md#http-transport-security).
 

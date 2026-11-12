@@ -26,9 +26,20 @@ describe('loadHttpSecurityConfig', () => {
     assert.throws(() => loadHttpSecurityConfig({ HOST: '::' }), /MCP_ALLOW_NON_LOOPBACK/);
   });
 
-  test('accepts a non-loopback bind with the opt-in', () => {
-    const cfg = loadHttpSecurityConfig({ HOST: '0.0.0.0', MCP_ALLOW_NON_LOOPBACK: 'true' });
-    assert.equal(cfg.host, '0.0.0.0');
+  test('a non-loopback bind needs a token or an explicit unauthenticated opt-in', () => {
+    const optIn = { HOST: '0.0.0.0', MCP_ALLOW_NON_LOOPBACK: 'true' };
+    assert.throws(() => loadHttpSecurityConfig(optIn), /MCP_ALLOW_UNAUTHENTICATED/);
+    assert.equal(loadHttpSecurityConfig({ ...optIn, MCP_AUTH_TOKEN: TOKEN }).host, '0.0.0.0');
+    assert.equal(loadHttpSecurityConfig({ ...optIn, MCP_ALLOW_UNAUTHENTICATED: 'true' }).authToken, undefined);
+    // Loopback needs neither.
+    assert.equal(loadHttpSecurityConfig({}).authToken, undefined);
+  });
+
+  test('PORT must be all digits', () => {
+    assert.equal(loadHttpSecurityConfig({ PORT: '3031' }).port, 3031);
+    for (const p of ['3031abc', '-1', '70000', '', '3e3']) {
+      assert.throws(() => loadHttpSecurityConfig({ PORT: p }), /PORT/, p);
+    }
   });
 
   test('loopback detection', () => {
@@ -43,13 +54,16 @@ describe('loadHttpSecurityConfig', () => {
     assert.throws(() => loadHttpSecurityConfig({ MCP_ALLOWED_ORIGINS: 'https://a.example/path' }), /plain origin/);
   });
 
-  test('rejects an empty MCP_ALLOWED_HOSTS', () => {
-    assert.throws(() => loadHttpSecurityConfig({ MCP_ALLOWED_HOSTS: ' , ' }), /empty/);
+  test('MCP_ALLOWED_HOSTS adds to the loopback names, which are always kept', () => {
+    assert.deepEqual(loadHttpSecurityConfig({ MCP_ALLOWED_HOSTS: 'Pihole-MCP, 192.0.2.5' }).allowedHosts,
+      ['localhost', '127.0.0.1', '[::1]', 'pihole-mcp', '192.0.2.5']);
+    assert.deepEqual(loadHttpSecurityConfig({ MCP_ALLOWED_HOSTS: ' , ' }).allowedHosts, ['localhost', '127.0.0.1', '[::1]']);
   });
 
   test('reads the token from env or from a file, never both, with a minimum length', () => {
     assert.equal(loadHttpSecurityConfig({ MCP_AUTH_TOKEN: TOKEN }).authToken, TOKEN);
     assert.throws(() => loadHttpSecurityConfig({ MCP_AUTH_TOKEN: 'short' }), /too short/);
+    assert.throws(() => loadHttpSecurityConfig({ MCP_AUTH_TOKEN: `${TOKEN} ${TOKEN}` }), /whitespace/);
 
     const dir = mkdtempSync(join(tmpdir(), 'pihole-mcp-test-'));
     try {

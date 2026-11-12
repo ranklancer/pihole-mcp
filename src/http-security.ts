@@ -13,7 +13,8 @@ import { hostHeaderValidation } from '@modelcontextprotocol/sdk/server/middlewar
  *     allowlisted gets 403 Forbidden.
  *  2. Bind to localhost by default; binding any other address needs an
  *     explicit opt-in (MCP_ALLOW_NON_LOOPBACK=true).
- *  3. Optional bearer-token authentication on /mcp.
+ *  3. Bearer-token authentication on /mcp: optional on loopback; required on a
+ *     non-loopback bind unless the operator sets MCP_ALLOW_UNAUTHENTICATED=true.
  *
  * Host-header validation (DNS-rebinding protection) uses the SDK's own
  * `hostHeaderValidation` middleware, which the SDK recommends in place of the
@@ -27,7 +28,7 @@ import { hostHeaderValidation } from '@modelcontextprotocol/sdk/server/middlewar
 export interface HttpSecurityConfig {
   host: string;
   port: number;
-  /** Hostnames (port-agnostic) accepted in the Host header. IPv6 in brackets. */
+  /** Hostnames (port-agnostic) accepted in the Host header. IPv6 in brackets. Always includes loopback names. */
   allowedHosts: string[];
   /** Exact origins (scheme://host[:port]) accepted in the Origin header. */
   allowedOrigins: string[];
@@ -38,7 +39,10 @@ export interface HttpSecurityConfig {
 /** Minimum token length; `openssl rand -hex 32` produces 64 characters. */
 export const MIN_TOKEN_LENGTH = 32;
 
-const DEFAULT_ALLOWED_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
+// Loopback names are always accepted: a DNS-rebinding page always presents
+// the attacker's own hostname, never these, and the container health check
+// connects via 127.0.0.1.
+const LOOPBACK_HOSTNAMES = ['localhost', '127.0.0.1', '[::1]'];
 
 export function isLoopbackHost(host: string): boolean {
   const h = host.trim().toLowerCase();
@@ -88,6 +92,9 @@ function loadToken(env: NodeJS.ProcessEnv): string | undefined {
   } else if (fromEnv !== undefined && fromEnv !== '') {
     token = fromEnv.trim();
   }
+  if (token !== undefined && /\s/.test(token)) {
+    throw new Error('MCP auth token must not contain whitespace');
+  }
   if (token !== undefined && token.length < MIN_TOKEN_LENGTH) {
     throw new Error(
       `MCP auth token is too short (minimum ${MIN_TOKEN_LENGTH} characters; generate one with \`openssl rand -hex 32\`)`,
@@ -99,9 +106,10 @@ function loadToken(env: NodeJS.ProcessEnv): string | undefined {
 /** Read and validate HTTP transport settings. Throws on unsafe or invalid config. */
 export function loadHttpSecurityConfig(env: NodeJS.ProcessEnv = process.env): HttpSecurityConfig {
   const host = (env.HOST ?? '127.0.0.1').trim();
-  const port = parseInt(env.PORT ?? '3000', 10);
-  if (!Number.isInteger(port) || port < 0 || port > 65535) {
-    throw new Error(`PORT must be an integer 0-65535`);
+  const rawPort = (env.PORT ?? '3000').trim();
+  const port = Number(rawPort);
+  if (!/^\d+$/.test(rawPort) || port > 65535) {
+    throw new Error('PORT must be an integer 0-65535');
   }
 
   if (!isLoopbackHost(host) && env.MCP_ALLOW_NON_LOOPBACK !== 'true') {
@@ -112,13 +120,19 @@ export function loadHttpSecurityConfig(env: NodeJS.ProcessEnv = process.env): Ht
     );
   }
 
-  const allowedHosts = (parseList(env.MCP_ALLOWED_HOSTS) ?? DEFAULT_ALLOWED_HOSTS).map(h => h.toLowerCase());
-  if (allowedHosts.length === 0) {
-    throw new Error('MCP_ALLOWED_HOSTS is set but empty; list at least one hostname');
-  }
+  const extraHosts = (parseList(env.MCP_ALLOWED_HOSTS) ?? []).map(h => h.toLowerCase());
+  const allowedHosts = [...new Set([...LOOPBACK_HOSTNAMES, ...extraHosts])];
   const allowedOrigins = (parseList(env.MCP_ALLOWED_ORIGINS) ?? []).map(normaliseOrigin);
+  const authToken = loadToken(env);
 
-  return { host, port, allowedHosts, allowedOrigins, authToken: loadToken(env) };
+  if (!isLoopbackHost(host) && authToken === undefined && env.MCP_ALLOW_UNAUTHENTICATED !== 'true') {
+    throw new Error(
+      `Refusing to serve unauthenticated on non-loopback HOST=${host}. ` +
+      'Set MCP_AUTH_TOKEN_FILE (or MCP_AUTH_TOKEN), or set MCP_ALLOW_UNAUTHENTICATED=true to accept the risk.',
+    );
+  }
+
+  return { host, port, allowedHosts, allowedOrigins, authToken };
 }
 
 function jsonRpcError(res: Response, status: number, message: string): void {
