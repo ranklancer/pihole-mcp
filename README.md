@@ -194,6 +194,8 @@ The token is compared in constant time and is never logged. There is no CLI flag
 
 `/health` needs no token (so container health checks need no secret) and returns only static service metadata; the `Host` and `Origin` checks still apply to it.
 
+Behind a reverse proxy that forwards `Host: 127.0.0.1`/`localhost`, the Host check cannot tell proxied traffic apart, so set a token there.
+
 On a loopback bind the token is optional. On any other bind it is required unless you set `MCP_ALLOW_UNAUTHENTICATED=true`, in which case the server logs a warning at startup.
 
 ### Upgrading from 0.3.0 (behaviour change)

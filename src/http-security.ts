@@ -121,6 +121,9 @@ export function loadHttpSecurityConfig(env: NodeJS.ProcessEnv = process.env): Ht
   }
 
   const extraHosts = (parseList(env.MCP_ALLOWED_HOSTS) ?? []).map(h => h.toLowerCase());
+  if (extraHosts.some(h => h.includes('*'))) {
+    throw new Error('MCP_ALLOWED_HOSTS does not support wildcards; list each hostname');
+  }
   const allowedHosts = [...new Set([...LOOPBACK_HOSTNAMES, ...extraHosts])];
   const allowedOrigins = (parseList(env.MCP_ALLOWED_ORIGINS) ?? []).map(normaliseOrigin);
   const authToken = loadToken(env);

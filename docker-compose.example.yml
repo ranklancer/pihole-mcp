@@ -75,5 +75,7 @@ secrets:
   # pihole2_password:
   #   file: ./secrets/pihole2_password
   # Generate with: openssl rand -hex 32 > secrets/mcp_auth_token
+  # Restrict it on the host but keep it readable by the container user (uid 1001),
+  # e.g. chmod 640 secrets/mcp_auth_token && sudo chgrp 1001 secrets/mcp_auth_token
   mcp_auth_token:
     file: ./secrets/mcp_auth_token

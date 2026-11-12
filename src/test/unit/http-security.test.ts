@@ -58,6 +58,7 @@ describe('loadHttpSecurityConfig', () => {
     assert.deepEqual(loadHttpSecurityConfig({ MCP_ALLOWED_HOSTS: 'Pihole-MCP, 192.0.2.5' }).allowedHosts,
       ['localhost', '127.0.0.1', '[::1]', 'pihole-mcp', '192.0.2.5']);
     assert.deepEqual(loadHttpSecurityConfig({ MCP_ALLOWED_HOSTS: ' , ' }).allowedHosts, ['localhost', '127.0.0.1', '[::1]']);
+    assert.throws(() => loadHttpSecurityConfig({ MCP_ALLOWED_HOSTS: '*' }), /wildcards/);
   });
 
   test('reads the token from env or from a file, never both, with a minimum length', () => {
