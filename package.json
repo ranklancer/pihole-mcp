@@ -19,6 +19,7 @@
     "start": "node dist/index.js",
     "dev": "tsc --watch",
     "prepublishOnly": "npm run build",
+    "test": "tsc && node --test \"dist/test/unit/**/*.test.js\"",
     "test:integration": "node dist/test/integration.js",
     "lint": "eslint ."
   },
