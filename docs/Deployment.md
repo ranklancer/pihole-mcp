@@ -84,8 +84,18 @@ mapping to suit your network). Then connect your MCP client directly (no
 `mcp-remote` proxy needed):
 
 ```json
-{ "mcpServers": { "pihole": { "url": "http://<host>:<port>/mcp" } } }
+{
+  "mcpServers": {
+    "pihole": {
+      "type": "http",
+      "url": "http://<host>:<port>/mcp",
+      "headers": { "Authorization": "Bearer ${PIHOLE_MCP_TOKEN}" }
+    }
+  }
+}
 ```
+
+The header carries the token from `secrets/mcp_auth_token`. Add `<host>` to `MCP_ALLOWED_HOSTS` if it is not `localhost` or `127.0.0.1`.
 
 ## Networking
 

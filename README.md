@@ -1,7 +1,7 @@
 # pihole-mcp
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org)
 [![Pi-hole v6](https://img.shields.io/badge/Pi--hole-v6-red.svg)](https://pi-hole.net)
 [![MCP](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-purple.svg)](https://modelcontextprotocol.io)
 
@@ -25,7 +25,45 @@ Perfect for **homelabbers** running multiple Pi-holes (primary + secondary, or p
 
 ## Quick Start
 
-### Docker (recommended)
+### npx (stdio, no clone, no Docker)
+
+> **Requires `@ranklancer/pihole-mcp` 0.3.0 or later.** The only version on npm at the time of writing is 0.2.0, which predates stdio support (`MCP_TRANSPORT=stdio`) and starts an HTTP server instead, so the configs below do not work with it. Until 0.3.0 is published, use one of the other options below. Check with `npm view @ranklancer/pihole-mcp version`.
+
+The MCP client starts the server as a child process through `npx` and talks to it over stdin/stdout. Nothing is cloned, no port is opened and nothing keeps running in the background. Requires Node.js 22 or newer.
+
+Add this to your MCP client config (for Claude Desktop: `claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "pihole": {
+      "command": "npx",
+      "args": ["-y", "@ranklancer/pihole-mcp"],
+      "env": {
+        "MCP_TRANSPORT": "stdio",
+        "PIHOLE_INSTANCES": "pihole",
+        "PIHOLE_BASE_URL": "http://pihole.example.com",
+        "PIHOLE_PASSWORD": "your-pihole-api-password"
+      }
+    }
+  }
+}
+```
+
+Or with Claude Code:
+
+```bash
+claude mcp add --scope user pihole \
+  -e MCP_TRANSPORT=stdio \
+  -e PIHOLE_INSTANCES=pihole \
+  -e PIHOLE_BASE_URL=http://pihole.example.com \
+  -e PIHOLE_PASSWORD=your-pihole-api-password \
+  -- npx -y @ranklancer/pihole-mcp
+```
+
+The password sits in plain text in the client config; keep that file private (`chmod 600`). For several instances, see [Configuration](#configuration). To pin a release, use `@ranklancer/pihole-mcp@0.3.0` in `args`. For a long-lived HTTP endpoint, use Docker below.
+
+### Docker (HTTP endpoint)
 
 ```bash
 git clone https://github.com/ranklancer/pihole-mcp.git
@@ -34,24 +72,30 @@ cp .env.example .env
 # Edit .env with your Pi-hole URL(s) and password(s)
 
 mkdir -p secrets
-echo "your-pihole-password" > secrets/pihole_password
-chmod 600 secrets/pihole_password
+printf '%s' "your-pihole-password" > secrets/pihole_password
 openssl rand -hex 32 > secrets/mcp_auth_token   # bearer token for /mcp
+# The container runs as uid 1001 and must be able to read both files:
+chmod 640 secrets/pihole_password secrets/mcp_auth_token
+sudo chgrp 1001 secrets/pihole_password secrets/mcp_auth_token
 
 cp docker-compose.example.yml docker-compose.yml
 docker compose up -d
 ```
 
-### Node.js
+The container binds all interfaces but the example compose file publishes the port on `127.0.0.1:3031` only, and `/mcp` requires the bearer token. Your MCP client must send it; see [Connecting to Your MCP Client](#connecting-to-your-mcp-client). If you are upgrading an existing Docker install, read [Upgrading from 0.3.0](#upgrading-from-030-behaviour-change).
+
+### Node.js (HTTP endpoint)
 
 ```bash
-npm install
+npm ci
 npm run build
 export PIHOLE_INSTANCES=pihole
 export PIHOLE_BASE_URL=http://pihole.example.com
 export PIHOLE_PASSWORD=your-password
 npm start
 ```
+
+This listens on `http://127.0.0.1:3000/mcp` (loopback only, no token needed). To listen on another address, see [HTTP transport security](#http-transport-security).
 
 ### Local on demand (stdio, no Docker)
 
@@ -86,7 +130,7 @@ Or add it manually to your MCP client config:
 }
 ```
 
-`HOST` and `PORT` from `.env` are ignored in stdio mode.
+`HOST`, `PORT` and the `MCP_*` HTTP security settings (token, allowed hosts and origins) from `.env` are ignored in stdio mode: there is no network listener to protect.
 
 ## Configuration
 
@@ -144,25 +188,13 @@ Every tool accepts an optional `instance` parameter to target a specific Pi-hole
 
 ## Connecting to Your MCP Client
 
-This section applies to the HTTP transport (Docker or `npm start`). For stdio, see [Local on demand](#local-on-demand-stdio-no-docker).
+This section applies to the HTTP transport (Docker or `npm start`). For stdio, see [npx](#npx-stdio-no-clone-no-docker) or [Local on demand](#local-on-demand-stdio-no-docker).
 
-The server listens on `http://HOST:PORT/mcp` (default: `http://127.0.0.1:3000/mcp`). See [HTTP transport security](#http-transport-security) before exposing it beyond loopback.
+The server listens on `http://HOST:PORT/mcp`. Run directly with `npm start` that is `http://127.0.0.1:3000/mcp`; the example Docker compose file publishes it as `http://127.0.0.1:3031/mcp`. The examples below use the Docker port; adjust it for your setup. See [HTTP transport security](#http-transport-security) before exposing it beyond loopback.
 
 ### Claude Desktop / Claude Code
 
-Add to your MCP settings:
-
-```json
-{
-  "mcpServers": {
-    "pihole": {
-      "url": "http://localhost:3031/mcp"
-    }
-  }
-}
-```
-
-If you set a bearer token, send it in the `Authorization` header. Claude Code expands environment variables in `.mcp.json`, so the token stays out of the file:
+The Docker setup requires a bearer token, so send it in the `Authorization` header. Claude Code expands environment variables in `.mcp.json`, so the token stays out of the file (export `PIHOLE_MCP_TOKEN` with the contents of `secrets/mcp_auth_token`):
 
 ```json
 {
@@ -171,6 +203,18 @@ If you set a bearer token, send it in the `Authorization` header. Claude Code ex
       "type": "http",
       "url": "http://localhost:3031/mcp",
       "headers": { "Authorization": "Bearer ${PIHOLE_MCP_TOKEN}" }
+    }
+  }
+}
+```
+
+A loopback-only server started with `npm start` and no token needs no header:
+
+```json
+{
+  "mcpServers": {
+    "pihole": {
+      "url": "http://localhost:3000/mcp"
     }
   }
 }
@@ -217,14 +261,17 @@ curl http://localhost:3031/health
 ## Development
 
 ```bash
-npm install
+npm ci
 npm run dev     # Watch mode — recompiles on save
 npm start       # Run the server
+npm test        # Build and run the unit tests (no Pi-hole needed)
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the pull request and release process.
 
 ## Requirements
 
-- Node.js >= 20
+- Node.js >= 22 (Node 20 reached end of life on 2026-04-30). `npm test` also needs Node 21 or later, because `node --test` only expands glob patterns from then on; the 22 floor covers it.
 - Pi-hole v6 with API access enabled
 - Network connectivity to your Pi-hole instance(s)
 
