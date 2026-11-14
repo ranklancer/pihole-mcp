@@ -7,13 +7,15 @@ Thanks for your interest in contributing!
 ```bash
 npm ci          # install exact, locked dependencies
 npm run build   # compile TypeScript
+npm run lint    # eslint
+npm test        # build, then run the unit tests (needs no Pi-hole)
 ```
 
 ## Pull Requests
 
 - Create a topic branch from `main` (e.g. `feat/...`, `fix/...`, `chore/...`).
 - Keep changes focused; one logical change per PR.
-- Ensure the project builds (`npm run build`) before opening a PR.
+- Ensure the project builds and `npm test` passes before opening a PR.
 - All changes land via pull request and require review — direct pushes to
   `main` are disabled.
 - Use clear, conventional commit messages (e.g. `feat:`, `fix:`, `chore:`,
@@ -21,7 +23,7 @@ npm run build   # compile TypeScript
 
 ## Supported Node versions
 
-`engines.node` is `>=22`. The CI matrix must only list versions at or above that floor; do not raise `engines` past a version CI does not test.
+`engines.node` is `>=22`. The CI matrix must only list versions at or above that floor; do not raise `engines` past a version CI does not test. `npm test` relies on `node --test` expanding a glob, which needs Node 21 or later; the floor of 22 satisfies this. The Docker image uses `node:22-alpine`, which must stay at or above the floor.
 
 ## Releasing
 
