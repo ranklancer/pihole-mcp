@@ -1,6 +1,11 @@
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { fileURLToPath } from 'node:url';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { createServer as createNetServer } from 'node:net';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
@@ -118,5 +123,129 @@ describe('argument validation', () => {
     assert.equal(r.failed, true);
     // The server must still answer afterwards.
     assert.ok((await client.listTools()).tools.length >= BASELINE_TOOLS.length);
+  });
+});
+
+// ── HTTP transport ───────────────────────────────────────────────────
+// Spawns the built server with MCP_TRANSPORT unset (HTTP) on a random loopback
+// port. The token is a throwaway generated per run and kept in a 0600 file,
+// never on the command line.
+
+function baseEnv(extra: Record<string, string>): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [k, v] of Object.entries(process.env)) if (v !== undefined) env[k] = v;
+  delete env.MCP_TRANSPORT;
+  for (const k of Object.keys(env)) if (k.startsWith('MCP_') || k === 'HOST' || k === 'PORT') delete env[k];
+  return Object.assign(env, {
+    PIHOLE_INSTANCES: 'pihole',
+    PIHOLE_BASE_URL: 'http://127.0.0.1:1',
+    PIHOLE_PASSWORD: 'unused',
+  }, extra);
+}
+
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const s = createNetServer();
+    s.once('error', reject);
+    s.listen(0, '127.0.0.1', () => {
+      const { port } = s.address() as { port: number };
+      s.close(() => resolve(port));
+    });
+  });
+}
+
+describe('HTTP transport', () => {
+  let child: ChildProcess;
+  let dir: string;
+  let url: string;
+  const token = `t-${'a1b2c3d4'.repeat(8)}`;
+  const initialize = {
+    jsonrpc: '2.0', id: 1, method: 'initialize',
+    params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'unit-test', version: '0.0.0' } },
+  };
+
+  function post(headers: Record<string, string> = {}): Promise<Response> {
+    return fetch(`${url}/mcp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...headers },
+      body: JSON.stringify(initialize),
+      signal: AbortSignal.timeout(10_000),
+    });
+  }
+
+  before(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'pihole-mcp-test-'));
+    const tokenFile = join(dir, 'token');
+    writeFileSync(tokenFile, `${token}\n`, { mode: 0o600 });
+    const port = await freePort();
+    url = `http://127.0.0.1:${port}`;
+    child = spawn(process.execPath, [entry], {
+      env: baseEnv({ HOST: '127.0.0.1', PORT: String(port), MCP_AUTH_TOKEN_FILE: tokenFile }),
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    // Wait for the server's own "listening" line rather than sleeping.
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('HTTP server did not start')), 15_000);
+      child.once('exit', code => { clearTimeout(timer); reject(new Error(`server exited early (${code})`)); });
+      child.stdout!.on('data', (d: Buffer) => {
+        if (d.toString().includes('listening')) { clearTimeout(timer); resolve(); }
+      });
+    });
+  });
+
+  after(async () => {
+    if (child && child.exitCode === null) {
+      const exited = new Promise(r => child.once('exit', r));
+      child.kill('SIGTERM');
+      await exited;
+    }
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('401 without a token, and the challenge names Bearer', async () => {
+    const res = await post();
+    assert.equal(res.status, 401);
+    assert.match(res.headers.get('www-authenticate') ?? '', /^Bearer/);
+    await res.arrayBuffer();
+  });
+
+  test('401 with a wrong token', async () => {
+    const res = await post({ authorization: `Bearer ${'z'.repeat(token.length)}` });
+    assert.equal(res.status, 401);
+    await res.arrayBuffer();
+  });
+
+  test('200 with the token, and the response is a valid initialize result', async () => {
+    const res = await post({ authorization: `Bearer ${token}` });
+    assert.equal(res.status, 200);
+    const text = await res.text();
+    assert.match(text, /"serverInfo"/);
+    assert.match(text, /pihole-mcp/);
+  });
+
+  test('403 for a foreign Origin even with a valid token', async () => {
+    const res = await post({ authorization: `Bearer ${token}`, origin: 'https://evil.example' });
+    assert.equal(res.status, 403);
+    await res.arrayBuffer();
+  });
+
+  test('/health needs no token', async () => {
+    const res = await fetch(`${url}/health`, { signal: AbortSignal.timeout(10_000) });
+    assert.equal(res.status, 200);
+    assert.equal(((await res.json()) as { ok: boolean }).ok, true);
+  });
+
+  test('HOST=0.0.0.0 without MCP_ALLOW_NON_LOOPBACK exits non-zero', async () => {
+    const refused = spawn(process.execPath, [entry], {
+      env: baseEnv({ HOST: '0.0.0.0', PORT: String(await freePort()) }),
+      stdio: ['ignore', 'ignore', 'pipe'],
+    });
+    let stderr = '';
+    refused.stderr!.on('data', (d: Buffer) => { stderr += d.toString(); });
+    const timer = setTimeout(() => refused.kill('SIGKILL'), 15_000);
+    const code = await new Promise<number | null>(resolve => refused.once('exit', resolve));
+    clearTimeout(timer);
+    assert.ok(code !== null && code !== 0, `expected non-zero exit, got ${code}`);
+    assert.match(stderr, /MCP_ALLOW_NON_LOOPBACK/);
   });
 });
