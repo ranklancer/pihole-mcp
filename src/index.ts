@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import http from 'node:http';
+import type { Server as HttpServer } from 'node:http';
+import type { Request, Response } from 'express';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -7,9 +8,9 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { z } from 'zod';
 import { toolDefs } from './tools.js';
 import { logoutAll } from './instances.js';
+import { createHttpApp, isLoopbackHost, loadHttpSecurityConfig } from './http-security.js';
 
-const PORT = parseInt(process.env.PORT ?? '3000', 10);
-const HOST = process.env.HOST ?? '0.0.0.0';
+const VERSION = '0.3.0';
 
 /**
  * Minimal Zod-to-JSON-Schema converter for MCP tool registration.
@@ -116,58 +117,91 @@ function createServer(): Server {
 
 // ── HTTP transport ──────────────────────────────────────────────────
 
-const httpServer = http.createServer(async (req, res) => {
-  if (req.url === '/health') {
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, service: 'pihole-mcp', version: '0.3.0' }));
-    return;
-  }
-  if (req.url?.startsWith('/mcp')) {
-    // Stateless: one Server + transport per request, torn down on close.
-    const server = createServer();
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined,
-    });
-    res.on('close', () => {
-      transport.close();
-      server.close();
-    });
-    try {
-      await server.connect(transport);
-      await transport.handleRequest(req, res);
-    } catch (err) {
-      console.error('mcp request failed:', err);
-      if (!res.headersSent) {
-        res.writeHead(500, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({
-          jsonrpc: '2.0',
-          error: { code: -32603, message: 'Internal server error' },
-          id: null,
-        }));
-      }
+// Host/Origin validation, the loopback-bind default and optional bearer auth
+// live in http-security.ts (issue #43); this handler only runs once a request
+// has passed them.
+async function handleMcp(req: Request, res: Response): Promise<void> {
+  // Stateless: one Server + transport per request, torn down on close.
+  const server = createServer();
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+  });
+  res.on('close', () => {
+    transport.close();
+    server.close();
+  });
+  try {
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+  } catch (err) {
+    console.error('mcp request failed:', err);
+    if (!res.headersSent) {
+      res.writeHead(500, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({
+        jsonrpc: '2.0',
+        error: { code: -32603, message: 'Internal server error' },
+        id: null,
+      }));
     }
-    return;
   }
-  res.writeHead(404).end('not found');
-});
+}
+
+let httpServer: HttpServer | undefined;
 
 // stdout carries the JSON-RPC stream in stdio mode, so nothing else may log to it.
 if (process.env.MCP_TRANSPORT === 'stdio') {
   await createServer().connect(new StdioServerTransport());
 } else {
-  httpServer.listen(PORT, HOST, () => {
-    console.log(`pihole-mcp listening on http://${HOST}:${PORT}`);
+  let cfg;
+  try {
+    cfg = loadHttpSecurityConfig();
+  } catch (err) {
+    console.error(`pihole-mcp: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  }
+  const { host, port } = cfg;
+  // Log from the 'listening' event: Express 5's listen() callback also fires on
+  // a bind error, which would print a false "listening" line first.
+  httpServer = createHttpApp(cfg, handleMcp, VERSION).listen(port, host);
+  httpServer.on('listening', () => {
+    const shown = host.includes(':') ? `[${host}]` : host;
+    console.log(`pihole-mcp listening on http://${shown}:${port}`);
+    console.log(
+      `pihole-mcp: auth ${cfg.authToken ? 'enabled (bearer token)' : 'disabled'}; ` +
+      `allowed hosts: ${cfg.allowedHosts.join(', ')}; ` +
+      `allowed origins: ${cfg.allowedOrigins.length ? cfg.allowedOrigins.join(', ') : '(none)'}`,
+    );
+    if (!isLoopbackHost(host) && !cfg.authToken) {
+      console.warn(
+        `pihole-mcp: WARNING: bound to non-loopback ${host} with authentication disabled ` +
+        '(MCP_ALLOW_UNAUTHENTICATED=true). Anyone who can reach this port can change your Pi-hole configuration.',
+      );
+    }
+  });
+  httpServer.on('error', (err) => {
+    console.error(`pihole-mcp: cannot listen on ${host}:${port}: ${err.message}`);
+    process.exit(1);
   });
 }
 
-// Release Pi-hole API seats before exiting; logout() has its own short timeout,
-// the race is a backstop so a stuck instance cannot block shutdown.
+const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+
+// Order matters: stop accepting HTTP requests and let in-flight ones finish
+// (a late request would otherwise log back in after the logout), then release
+// the Pi-hole API seats, then exit. Each step has a backstop so a stuck
+// connection or Pi-hole instance cannot block shutdown.
 let shuttingDown = false;
 async function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
-  httpServer.close();
-  await Promise.race([logoutAll(), new Promise(r => setTimeout(r, 3_000))]);
+  if (httpServer) {
+    const server = httpServer;
+    const closed = new Promise<void>(r => server.close(() => r()));
+    server.closeIdleConnections();
+    await Promise.race([closed, sleep(2_000)]);
+    server.closeAllConnections();
+  }
+  await Promise.race([logoutAll(), sleep(3_000)]);
   process.exit(0);
 }
 process.on('SIGTERM', shutdown);

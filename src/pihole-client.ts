@@ -17,8 +17,8 @@ export class PiholeClient {
     // hang a tool call for minutes.
     this.dispatcher = new Agent({
       connect: { timeout: CONNECT_TIMEOUT_MS, ...(cfg.insecureTLS ? { rejectUnauthorized: false } : {}) },
-      headersTimeout: REQUEST_TIMEOUT_MS,
-      bodyTimeout: REQUEST_TIMEOUT_MS,
+      headersTimeout: cfg.requestTimeoutMs ?? REQUEST_TIMEOUT_MS,
+      bodyTimeout: cfg.requestTimeoutMs ?? REQUEST_TIMEOUT_MS,
     });
   }
 
@@ -62,6 +62,8 @@ export class PiholeClient {
 
   /** Delete the current session (best effort, short timeout). */
   async logout(): Promise<void> {
+    // A login still in flight would otherwise land after this and leak a seat.
+    if (this.loginInFlight) await this.loginInFlight.catch(() => {});
     const sess = this.session;
     if (!sess) return;
     this.session = null;
