@@ -20,8 +20,21 @@ services:
         exec node dist/index.js
     environment:
       NODE_ENV: production
+      # The container must bind all interfaces so the published port reaches it.
+      # A non-loopback bind is refused unless MCP_ALLOW_NON_LOOPBACK is "true".
       HOST: 0.0.0.0
+      MCP_ALLOW_NON_LOOPBACK: "true"
       PORT: "3000"
+      # Bearer token required on /mcp. A non-loopback bind without a token is
+      # refused unless MCP_ALLOW_UNAUTHENTICATED is "true" (not recommended:
+      # any container on the same Docker network could then manage your Pi-hole).
+      MCP_AUTH_TOKEN_FILE: /run/secrets/mcp_auth_token
+      # MCP_ALLOW_UNAUTHENTICATED: "true"
+      # Extra hostnames accepted in the Host header (DNS-rebinding protection).
+      # localhost, 127.0.0.1 and [::1] are always accepted, which covers the
+      # 127.0.0.1 port mapping below. Add the service name if other containers
+      # call http://pihole-mcp:3000/mcp, and the LAN name/IP if you publish wider:
+      # MCP_ALLOWED_HOSTS: pihole-mcp,pihole-mcp.lan
       TZ: ${TZ:-UTC}
       PIHOLE_INSTANCES: ${PIHOLE_INSTANCES:-pihole}
       PIHOLE_BASE_URL: ${PIHOLE_BASE_URL}
@@ -31,6 +44,7 @@ services:
     secrets:
       - pihole_password
       # - pihole2_password
+      - mcp_auth_token
     ports:
       - "127.0.0.1:3031:3000"
     restart: unless-stopped
@@ -60,3 +74,8 @@ secrets:
     file: ./secrets/pihole_password
   # pihole2_password:
   #   file: ./secrets/pihole2_password
+  # Generate with: openssl rand -hex 32 > secrets/mcp_auth_token
+  # Restrict it on the host but keep it readable by the container user (uid 1001),
+  # e.g. chmod 640 secrets/mcp_auth_token && sudo chgrp 1001 secrets/mcp_auth_token
+  mcp_auth_token:
+    file: ./secrets/mcp_auth_token
