@@ -139,6 +139,9 @@ Docker secrets are supported as a fallback: `/run/secrets/<name>_password` (lowe
 | `pihole_domain_management` | Update or delete an allow/deny domain (completes CRUD) |
 | `pihole_local_dns` | List/add/delete local DNS A records |
 | `pihole_local_cname` | List/add/delete local CNAME records |
+| `pihole_stats` | Read-only top domains/clients (permitted or blocked), upstreams, query types, recent blocked, query history, per-client history |
+| `pihole_blocking_status` | Read current blocking state and remaining timer |
+| `pihole_adlist_management` | List/add/update/delete subscribed adlists (`/api/lists`); run `pihole_reload_lists` afterwards |
 
 Every tool accepts an optional `instance` parameter to target a specific Pi-hole. Defaults to the first configured instance.
 
