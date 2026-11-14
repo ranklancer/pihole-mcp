@@ -7,6 +7,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ErrorCode, ListToolsRequestSchema, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { toolDefs } from './tools.js';
+import { formatArgIssues } from './arg-errors.js';
 import { createHttpApp, isLoopbackHost, loadHttpSecurityConfig } from './http-security.js';
 
 const VERSION = '0.3.0';
@@ -70,19 +71,6 @@ function jsonSchemaForObject(schema: z.ZodObject<any>): Record<string, any> {
 function zodToJsonSchema(schema: z.ZodType<any>): Record<string, any> {
   if (!(schema instanceof z.ZodObject)) return { type: 'object' };
   return jsonSchemaForObject(schema as z.ZodObject<any>);
-}
-
-/**
- * One-line, model-readable summary of a failed argument parse, e.g.
- * `Invalid arguments: action: Invalid enum value...; domain: Required`.
- * Uses only `issues[].path` and `.message`, which are the same in zod 3 and 4.
- */
-function formatArgIssues(error: { issues: ReadonlyArray<{ path: PropertyKey[]; message: string }> }): string {
-  const parts = error.issues.map(i => {
-    const where = i.path.map(String).join('.');
-    return where ? `${where}: ${i.message}` : i.message;
-  });
-  return `Invalid arguments: ${parts.join('; ')}`;
 }
 
 // ── MCP server setup ────────────────────────────────────────────────
