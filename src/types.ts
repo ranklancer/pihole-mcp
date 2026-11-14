@@ -4,6 +4,8 @@ export interface PiholeInstanceConfig {
   baseUrl: string;
   password: string;
   insecureTLS: boolean;
+  /** Per-request header/body timeout; defaults to 15s. Mainly for tests. */
+  requestTimeoutMs?: number;
 }
 
 /** Authenticated session state. */

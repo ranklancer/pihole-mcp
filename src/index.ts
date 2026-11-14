@@ -7,6 +7,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { toolDefs } from './tools.js';
+import { logoutAll } from './instances.js';
 import { createHttpApp, isLoopbackHost, loadHttpSecurityConfig } from './http-security.js';
 
 const VERSION = '0.3.0';
@@ -183,6 +184,25 @@ if (process.env.MCP_TRANSPORT === 'stdio') {
   });
 }
 
-function shutdown() { httpServer?.close(); process.exit(0); }
+const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+
+// Order matters: stop accepting HTTP requests and let in-flight ones finish
+// (a late request would otherwise log back in after the logout), then release
+// the Pi-hole API seats, then exit. Each step has a backstop so a stuck
+// connection or Pi-hole instance cannot block shutdown.
+let shuttingDown = false;
+async function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  if (httpServer) {
+    const server = httpServer;
+    const closed = new Promise<void>(r => server.close(() => r()));
+    server.closeIdleConnections();
+    await Promise.race([closed, sleep(2_000)]);
+    server.closeAllConnections();
+  }
+  await Promise.race([logoutAll(), sleep(3_000)]);
+  process.exit(0);
+}
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);

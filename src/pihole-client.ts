@@ -3,32 +3,54 @@ import { looksLikeRegex } from './types.js';
 import type { PiholeInstanceConfig, PiholeSession, QueryOpts, GroupOpts, ClientOpts } from './types.js';
 
 const SESSION_TTL_MS = 4 * 60 * 1000;
+const CONNECT_TIMEOUT_MS = 5_000;
+const REQUEST_TIMEOUT_MS = 15_000;
+const LOGOUT_TIMEOUT_MS = 2_000;
 
 export class PiholeClient {
   private session: PiholeSession | null = null;
-  private dispatcher?: Agent;
+  private loginInFlight: Promise<PiholeSession> | null = null;
+  private dispatcher: Agent;
 
   constructor(private cfg: PiholeInstanceConfig) {
-    if (cfg.insecureTLS) {
-      this.dispatcher = new Agent({ connect: { rejectUnauthorized: false } });
-    }
+    // Explicit timeouts: undici's defaults (300s) let an unreachable Pi-hole
+    // hang a tool call for minutes.
+    this.dispatcher = new Agent({
+      connect: { timeout: CONNECT_TIMEOUT_MS, ...(cfg.insecureTLS ? { rejectUnauthorized: false } : {}) },
+      headersTimeout: cfg.requestTimeoutMs ?? REQUEST_TIMEOUT_MS,
+      bodyTimeout: cfg.requestTimeoutMs ?? REQUEST_TIMEOUT_MS,
+    });
   }
 
-  /** Authenticate with the Pi-hole v6 API and cache the session. */
-  async ensureSession(): Promise<PiholeSession> {
-    const now = Date.now();
-    if (this.session && this.session.expiresAt > now + 5_000) return this.session;
+  /**
+   * Authenticate with the Pi-hole v6 API and cache the session.
+   * Concurrent callers share one login: Pi-hole has a limited number of API
+   * seats (webserver.api.max_sessions) and rate-limits POST /api/auth.
+   */
+  ensureSession(): Promise<PiholeSession> {
+    if (this.session && this.session.expiresAt > Date.now() + 5_000) return Promise.resolve(this.session);
+    this.loginInFlight ??= this.login().finally(() => { this.loginInFlight = null; });
+    return this.loginInFlight;
+  }
 
+  private async login(): Promise<PiholeSession> {
+    const now = Date.now();
     const res = await request(`${this.cfg.baseUrl}/api/auth`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ password: this.cfg.password }),
       dispatcher: this.dispatcher,
     });
-    const body = (await res.body.json()) as any;
+    const text = await res.body.text();
+    let body: any;
+    try { body = text ? JSON.parse(text) : {}; } catch { body = undefined; }
 
-    if (!body?.session?.valid || !body.session.sid) {
-      throw new Error(`[${this.cfg.name}] auth failed: ${body?.session?.message ?? 'unknown'}`);
+    // Pi-hole answers 401 for a bad password/2FA, 429 for rate limiting or no
+    // free API seats; both carry a message in `error` or `session`.
+    const detail = body?.error?.message ?? body?.session?.message;
+    if (res.statusCode >= 400 || !body?.session?.valid || !body.session.sid) {
+      const why = detail ?? (body === undefined ? 'non-JSON response' : 'unknown');
+      throw new Error(`[${this.cfg.name}] auth failed (HTTP ${res.statusCode}): ${why}`);
     }
     this.session = {
       sid: body.session.sid,
@@ -38,33 +60,48 @@ export class PiholeClient {
     return this.session;
   }
 
-  /** Delete the current session. */
+  /** Delete the current session (best effort, short timeout). */
   async logout(): Promise<void> {
-    if (!this.session) return;
-    try {
-      await request(`${this.cfg.baseUrl}/api/auth`, {
-        method: 'DELETE',
-        headers: { 'X-FTL-SID': this.session.sid },
-        dispatcher: this.dispatcher,
-      });
-    } catch { /* swallow */ }
+    // A login still in flight would otherwise land after this and leak a seat.
+    if (this.loginInFlight) await this.loginInFlight.catch(() => {});
+    const sess = this.session;
+    if (!sess) return;
     this.session = null;
+    try {
+      const res = await request(`${this.cfg.baseUrl}/api/auth`, {
+        method: 'DELETE',
+        headers: { 'X-FTL-SID': sess.sid },
+        dispatcher: this.dispatcher,
+        headersTimeout: LOGOUT_TIMEOUT_MS,
+        bodyTimeout: LOGOUT_TIMEOUT_MS,
+      });
+      await res.body.dump();
+    } catch { /* swallow */ }
   }
 
   /** Generic authenticated API call. */
   async call(method: Dispatcher.HttpMethod, path: string, payload?: unknown): Promise<any> {
-    const sess = await this.ensureSession();
     const url = `${this.cfg.baseUrl}${path}`;
-    const headers: Record<string, string> = { 'X-FTL-SID': sess.sid };
-    let body: string | undefined;
+    const body = payload !== undefined ? JSON.stringify(payload) : undefined;
 
-    if (payload !== undefined) {
-      headers['content-type'] = 'application/json';
-      body = JSON.stringify(payload);
+    const send = async () => {
+      const sess = await this.ensureSession();
+      const headers: Record<string, string> = { 'X-FTL-SID': sess.sid };
+      if (body !== undefined) headers['content-type'] = 'application/json';
+      const r = await request(url, { method, headers, body, dispatcher: this.dispatcher });
+      return { res: r, text: await r.body.text(), sid: sess.sid };
+    };
+
+    const first = await send();
+    const sid = first.sid;
+    let { res, text } = first;
+    if (res.statusCode === 401) {
+      // Session dropped server-side (restart, deleted, seat limit). A 401 means
+      // the request was not processed, so one retry after re-login is safe.
+      // Only invalidate if nobody has already replaced the stale session.
+      if (this.session?.sid === sid) this.session = null;
+      ({ res, text } = await send());
     }
-
-    const res = await request(url, { method, headers, body, dispatcher: this.dispatcher });
-    const text = await res.body.text();
     let parsed: any;
     try { parsed = text ? JSON.parse(text) : {}; }
     catch { parsed = { raw: text }; }
