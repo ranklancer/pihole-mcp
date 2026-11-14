@@ -4,9 +4,10 @@ import type { Request, Response } from 'express';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { CallToolRequestSchema, ErrorCode, ListToolsRequestSchema, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { toolDefs } from './tools.js';
+import { formatArgIssues } from './arg-errors.js';
 import { createHttpApp, isLoopbackHost, loadHttpSecurityConfig } from './http-security.js';
 
 const VERSION = '0.3.0';
@@ -100,9 +101,16 @@ function createServer(): Server {
 
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const tool = toolDefs.find(t => t.name === req.params.name);
-    if (!tool) throw new Error(`Unknown tool: ${req.params.name}`);
+    // MCP spec (Tools > Error Handling): unknown tools are protocol errors
+    // (-32602); input validation failures are tool execution errors so the
+    // model can read them and retry.
+    if (!tool) throw new McpError(ErrorCode.InvalidParams, `Unknown tool: ${req.params.name}`);
 
-    const args = tool.schema.parse(req.params.arguments ?? {});
+    const parsed = tool.schema.safeParse(req.params.arguments ?? {});
+    if (!parsed.success) {
+      return { isError: true, content: [{ type: 'text', text: formatArgIssues(parsed.error) }] };
+    }
+    const args = parsed.data;
     try {
       const result = await tool.handler(args);
       return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
