@@ -20,3 +20,10 @@ When reporting, please include:
 This project is developed on a rolling basis; fixes are applied to the latest
 release. Please make sure you are running the most recent version before
 reporting.
+
+## Deployment hardening
+
+The HTTP transport binds `127.0.0.1` by default, validates the `Host` and
+`Origin` headers, and supports a bearer token (`MCP_AUTH_TOKEN_FILE`). A
+non-loopback bind requires a token unless `MCP_ALLOW_UNAUTHENTICATED=true` is
+set explicitly. See [HTTP transport security](README.md#http-transport-security).
