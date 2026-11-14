@@ -80,7 +80,7 @@ describe('stdio server: invalid tool arguments', () => {
     const out = await rpc([
       ...init,
       { jsonrpc: '2.0', id: 2, method: 'tools/call',
-        params: { name: 'pihole_adlist_management', arguments: { action: 'purge' } } },
+        params: { name: 'pihole_group_management', arguments: { action: 'purge' } } },
       { jsonrpc: '2.0', id: 3, method: 'tools/call',
         params: { name: 'no_such_tool', arguments: {} } },
     ]);
